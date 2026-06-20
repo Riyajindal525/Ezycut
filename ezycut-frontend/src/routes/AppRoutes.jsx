@@ -4,83 +4,106 @@ import {
   Route,
 } from "react-router-dom";
 
+// Public Pages
 import Home from "../pages/public/Home";
 import Login from "../pages/public/Login";
 import Register from "../pages/public/Register";
 import Salons from "../pages/public/Salons";
-import SalonDetails
-from "../pages/public/SalonDetails";
+import SalonDetails from "../pages/public/SalonDetails";
+import QueueTracker from "../pages/public/QueueTracker";
+
+// Customer Pages
 import Booking from "../pages/public/Booking";
 import MyBookings from "../pages/customer/MyBookings";
 import PaymentHistory from "../pages/customer/PaymentHistory";
 import MyReviews from "../pages/customer/MyReviews";
-import Notifications
-from "../pages/customer/Notifications";
+import Notifications from "../pages/customer/Notifications";
 import MyQueue from "../pages/customer/MyQueue";
+import Profile from "../pages/customer/Profile";
 
-const AppRoutes =
-  () => {
-    return (
-      <BrowserRouter>
-        <Routes>
+// Owner Pages
+import OwnerDashboard from "../pages/owner/Dashboard";
+import OwnerBookings from "../pages/owner/Bookings";
+import OwnerServices from "../pages/owner/Services";
+import OwnerQueue from "../pages/owner/Queue";
+import OwnerPayments from "../pages/owner/Payments";
+import OwnerSalonProfile from "../pages/owner/SalonProfile";
 
-          <Route
-            path="/"
-            element={<Home />}
-          />
+// Admin Pages
+import AdminDashboard from "../pages/admin/Dashboard";
+import AdminSalons from "../pages/admin/Salons";
+import AdminUsers from "../pages/admin/Users";
+import AdminPayments from "../pages/admin/Payments";
+import AdminAnalytics from "../pages/admin/Analytics";
 
-          <Route
-            path="/login"
-            element={<Login />}
-          />
+// Layouts & Guards
+import ProtectedRoute from "../components/common/ProtectedRoute";
+import CustomerLayout from "../components/layout/CustomerLayout";
+import OwnerLayout from "../components/layout/OwnerLayout";
+import AdminLayout from "../components/layout/AdminLayout";
 
-          <Route
-            path="/register"
-            element={<Register />}
-          />
+const AppRoutes = () => {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Public Routes with CustomerLayout (Navbar & Footer) */}
+        <Route element={<CustomerLayout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/salons" element={<Salons />} />
+          <Route path="/salons/:id" element={<SalonDetails />} />
+          <Route path="/track" element={<QueueTracker />} />
+          <Route path="/track/:tokenCode" element={<QueueTracker />} />
+        </Route>
 
-          <Route
-  path="/salons"
-  element={<Salons />}
-/>
-    <Route
-  path="/salons/:id"
-  element={
-    <SalonDetails />
-  }
-/>
- <Route
-  path="/booking/:serviceId"
-  element={<Booking />}
-/>
-     <Route
-  path="/my-bookings"
-  element={<MyBookings />}
-/>
-     <Route
-  path="/payment-history"
-  element={<PaymentHistory />}
-/>
-<Route
-  path="/my-reviews"
-  element={<MyReviews />}
-/>
+        {/* Auth routes (no Navbar/Footer layout) */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
+        {/* Protected Customer Routes */}
+        <Route element={<ProtectedRoute allowedRoles={["customer", "admin"]} />}>
+          <Route element={<CustomerLayout />}>
+            <Route path="/booking/:serviceId" element={<Booking />} />
+            <Route path="/my-bookings" element={<MyBookings />} />
+            <Route path="/payment-history" element={<PaymentHistory />} />
+            <Route path="/my-reviews" element={<MyReviews />} />
+            <Route path="/my-queue" element={<MyQueue />} />
+          </Route>
+        </Route>
 
+        {/* Shared Authenticated Routes — accessible by all logged-in roles */}
+        <Route element={<ProtectedRoute allowedRoles={["customer", "salon_owner", "admin"]} />}>
+          <Route element={<CustomerLayout />}>
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/notifications" element={<Notifications />} />
+          </Route>
+        </Route>
 
-       <Route
-  path="/notifications"
-  element={
-    <Notifications />
-  }
-/>
-<Route
-  path="/my-queue"
-  element={<MyQueue />}
-/>
-        </Routes>
-      </BrowserRouter>
-    );
-  };
+        {/* Protected Owner Routes */}
+        <Route element={<ProtectedRoute allowedRoles={["salon_owner", "admin"]} />}>
+          <Route element={<OwnerLayout />}>
+            <Route path="/owner/dashboard" element={<OwnerDashboard />} />
+            <Route path="/owner/bookings" element={<OwnerBookings />} />
+            <Route path="/owner/services" element={<OwnerServices />} />
+            <Route path="/owner/queue" element={<OwnerQueue />} />
+            <Route path="/owner/payments" element={<OwnerPayments />} />
+            <Route path="/owner/salon" element={<OwnerSalonProfile />} />
+            <Route path="/owner/profile" element={<Profile />} />
+          </Route>
+        </Route>
+
+        {/* Protected Admin Routes */}
+        <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
+          <Route element={<AdminLayout />}>
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/salons" element={<AdminSalons />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/payments" element={<AdminPayments />} />
+            <Route path="/admin/analytics" element={<AdminAnalytics />} />
+          </Route>
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+};
 
 export default AppRoutes;

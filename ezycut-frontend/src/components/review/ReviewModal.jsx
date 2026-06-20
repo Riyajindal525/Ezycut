@@ -1,129 +1,106 @@
-import {
-  useState,
-} from "react";
+import { useState } from "react";
+import { Star, X } from "lucide-react";
+import { createReview } from "../../api/review.api";
+import toast from "../../utils/toast";
 
-import {
-  createReview,
-} from "../../api/review.api";
-
-const ReviewModal = ({
-  bookingId,
-  onClose,
-}) => {
-
-  const [rating, setRating] =
-    useState(5);
-
-  const [comment, setComment] =
-    useState("");
-
-  const handleSubmit =
-    async () => {
-
-      try {
-
-        await createReview({
-          bookingId,
-          rating,
-          comment,
-        });
-
-        alert(
-          "Review submitted successfully"
-        );
-
-        onClose();
-
-      } catch (error) {
-
-        alert(
-          error.response?.data
-            ?.message ||
-            "Review Failed"
-        );
-
-      }
-    };
+const StarPicker = ({ value, onChange }) => {
+  const [hovered, setHovered] = useState(0);
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-
-      <div className="bg-white p-6 rounded-xl w-full max-w-md">
-
-        <h2 className="text-2xl font-bold mb-4">
-          Write Review
-        </h2>
-
-        <label className="block mb-2">
-          Rating
-        </label>
-
-        <select
-          value={rating}
-          onChange={(e) =>
-            setRating(
-              Number(
-                e.target.value
-              )
-            )
-          }
-          className="w-full border rounded-lg p-3"
+    <div style={{ display: "flex", gap: "0.25rem" }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          onMouseEnter={() => setHovered(n)}
+          onMouseLeave={() => setHovered(0)}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: "0.25rem" }}
         >
-          <option value={5}>
-            ⭐⭐⭐⭐⭐
-          </option>
+          <Star
+            size={28}
+            fill={n <= (hovered || value) ? "#fbbf24" : "none"}
+            style={{
+              color: n <= (hovered || value) ? "#fbbf24" : "var(--gray-300)",
+              transition: "all 0.1s",
+            }}
+          />
+        </button>
+      ))}
+    </div>
+  );
+};
 
-          <option value={4}>
-            ⭐⭐⭐⭐
-          </option>
+const ReviewModal = ({ bookingId, onClose, onSuccess }) => {
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
 
-          <option value={3}>
-            ⭐⭐⭐
-          </option>
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!rating) {
+      toast.warning("Please select a star rating.");
+      return;
+    }
 
-          <option value={2}>
-            ⭐⭐
-          </option>
+    setLoading(true);
+    try {
+      await createReview({ bookingId, rating, comment });
+      toast.success("Review submitted successfully!");
+      if (onSuccess) onSuccess();
+      onClose();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to submit review.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-          <option value={1}>
-            ⭐
-          </option>
-        </select>
-
-        <textarea
-          value={comment}
-          onChange={(e) =>
-            setComment(
-              e.target.value
-            )
-          }
-          rows="4"
-          placeholder="Write your review..."
-          className="w-full border rounded-lg p-3 mt-4"
-        />
-
-        <div className="flex gap-3 mt-5">
-
-          <button
-            onClick={
-              handleSubmit
-            }
-            className="bg-black text-white px-5 py-2 rounded-lg"
-          >
-            Submit
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <h2 style={{ fontSize: "1.125rem", fontWeight: 700, color: "var(--gray-800)" }}>Write a Review</h2>
+            <p style={{ fontSize: "0.8125rem", color: "var(--gray-500)", marginTop: "0.125rem" }}>Share your experience with others</p>
+          </div>
+          <button className="btn btn-outline btn-icon" onClick={onClose}>
+            <X size={16} />
           </button>
-
-          <button
-            onClick={onClose}
-            className="border px-5 py-2 rounded-lg"
-          >
-            Cancel
-          </button>
-
         </div>
 
-      </div>
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <div className="form-group">
+              <label className="form-label">Your Rating</label>
+              <StarPicker value={rating} onChange={setRating} />
+              <span style={{ fontSize: "0.8125rem", color: "var(--gray-400)", marginTop: "0.25rem" }}>
+                {rating === 5 ? "Excellent!" : rating === 4 ? "Very Good" : rating === 3 ? "Good" : rating === 2 ? "Fair" : "Poor"}
+              </span>
+            </div>
 
+            <div className="form-group">
+              <label className="form-label">Your Review (Optional)</label>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                rows="4"
+                placeholder="Describe your experience — the service, ambiance, staff..."
+                className="form-input form-textarea"
+              />
+            </div>
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? <><div className="spinner" style={{ width: "14px", height: "14px", borderWidth: "2px" }} /> Submitting...</> : "Submit Review"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };

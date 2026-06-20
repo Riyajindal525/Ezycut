@@ -1,195 +1,255 @@
 import { Link } from "react-router-dom";
-
-import Navbar from "../../components/layout/Navbar";
-import Footer from "../../components/layout/Footer";
+import { Search, Clock, Star, ArrowRight, Scissors, CheckCircle } from "lucide-react";
 import useAuthStore from "../../store/auth.store";
 
+const features = [
+  {
+    icon: Search,
+    title: "Discover Salons",
+    description: "Browse verified salons near you with real reviews and ratings.",
+    color: "#6366f1",
+    bg: "#eef2ff",
+  },
+  {
+    icon: Clock,
+    title: "Real-Time Queue",
+    description: "Track your position in queue live and arrive right on time.",
+    color: "#10b981",
+    bg: "#d1fae5",
+  },
+  {
+    icon: Star,
+    title: "Verified Reviews",
+    description: "Make informed decisions with authentic customer feedback.",
+    color: "#f59e0b",
+    bg: "#fef3c7",
+  },
+];
+
+const steps = [
+  { num: "01", title: "Choose a Salon", desc: "Browse and find the perfect salon." },
+  { num: "02", title: "Pick a Service", desc: "Select from the services offered." },
+  { num: "03", title: "Book & Pay Online", desc: "Instant confirmation via Razorpay." },
+  { num: "04", title: "Skip the Wait", desc: "Track queue and arrive on time." },
+];
+
 const Home = () => {
-  const token = useAuthStore(
-    (state) => state.token
-  );
+  const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
-
-      <Navbar />
-
+    <div style={{ minHeight: "100vh", background: "var(--gray-50)" }}>
       {/* Hero Section */}
+      <section style={{
+        background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)",
+        padding: "6rem 0 5rem",
+        position: "relative",
+        overflow: "hidden",
+      }}>
+        {/* Decorative gradient blob */}
+        <div style={{
+          position: "absolute", top: "-80px", right: "-80px",
+          width: "400px", height: "400px",
+          background: "radial-gradient(circle, rgba(99,102,241,0.2) 0%, transparent 70%)",
+          borderRadius: "50%", pointerEvents: "none",
+        }} />
+        <div style={{
+          position: "absolute", bottom: "-60px", left: "-60px",
+          width: "300px", height: "300px",
+          background: "radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)",
+          borderRadius: "50%", pointerEvents: "none",
+        }} />
 
-      <section className="flex flex-col items-center justify-center text-center px-6 py-24">
+        <div className="page-container" style={{ position: "relative", textAlign: "center" }}>
+          {/* Badge */}
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: "0.5rem",
+            background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)",
+            borderRadius: "var(--radius-full)", padding: "0.375rem 0.875rem",
+            fontSize: "0.8125rem", fontWeight: 600, color: "#a5b4fc",
+            marginBottom: "1.5rem",
+          }}>
+            <Scissors size={14} />
+            India's Smart Salon Booking Platform
+          </div>
 
-        <h1 className="text-5xl font-bold max-w-3xl">
-          Book Salon Appointments
-          Without Waiting
-        </h1>
+          <h1 style={{
+            fontSize: "clamp(2.5rem, 6vw, 4rem)",
+            fontWeight: 900,
+            color: "white",
+            letterSpacing: "-0.03em",
+            lineHeight: 1.1,
+            maxWidth: "720px",
+            margin: "0 auto 1.5rem",
+          }}>
+            Book Salon Appointments{" "}
+            <span style={{
+              background: "linear-gradient(135deg, #818cf8, #a78bfa)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}>
+              Without Waiting
+            </span>
+          </h1>
 
-        <p className="mt-6 text-gray-600 text-lg max-w-2xl">
-          Discover salons, book appointments,
-          track queues in real time and manage
-          your grooming experience from one place.
-        </p>
+          <p style={{
+            fontSize: "1.125rem",
+            color: "rgba(255,255,255,0.65)",
+            maxWidth: "560px",
+            margin: "0 auto 2.5rem",
+            lineHeight: 1.7,
+          }}>
+            Discover top-rated salons, book appointments in seconds, track your queue in real time — all from one place.
+          </p>
 
-        <div className="mt-10 flex gap-4">
-
-          <Link
-            to="/salons"
-            className="px-8 py-3 rounded-xl bg-black text-white hover:opacity-90"
-          >
-            Explore Salons
-          </Link>
-
-          {!token && (
-            <Link
-              to="/register"
-              className="px-8 py-3 rounded-xl border hover:bg-gray-100"
-            >
-              Get Started
+          <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
+            <Link to="/salons" className="btn btn-accent btn-lg" style={{ gap: "0.5rem" }}>
+              Explore Salons
+              <ArrowRight size={18} />
             </Link>
-          )}
+            {!token && (
+              <Link to="/register" className="btn btn-lg" style={{
+                background: "rgba(255,255,255,0.1)",
+                color: "white",
+                border: "1.5px solid rgba(255,255,255,0.2)",
+              }}>
+                Create Free Account
+              </Link>
+            )}
+            {token && user?.role === "customer" && (
+              <Link to="/my-bookings" className="btn btn-lg" style={{
+                background: "rgba(255,255,255,0.1)",
+                color: "white",
+                border: "1.5px solid rgba(255,255,255,0.2)",
+              }}>
+                My Bookings
+              </Link>
+            )}
+          </div>
 
+          {/* Trust bar */}
+          <div style={{
+            marginTop: "3rem",
+            display: "flex",
+            justifyContent: "center",
+            gap: "2rem",
+            flexWrap: "wrap",
+          }}>
+            {["10,000+ Customers", "500+ Salons", "Secure Payments", "Live Queue Tracking"].map((item) => (
+              <div key={item} style={{ display: "flex", alignItems: "center", gap: "0.375rem", color: "rgba(255,255,255,0.5)", fontSize: "0.8125rem", fontWeight: 500 }}>
+                <CheckCircle size={14} style={{ color: "#10b981" }} />
+                {item}
+              </div>
+            ))}
+          </div>
         </div>
-
       </section>
 
       {/* Features */}
+      <section style={{ padding: "5rem 0" }}>
+        <div className="page-container">
+          <div style={{ textAlign: "center", marginBottom: "3rem" }}>
+            <h2 style={{ fontSize: "2rem", fontWeight: 800, color: "var(--gray-800)", letterSpacing: "-0.02em", marginBottom: "0.75rem" }}>
+              Everything You Need
+            </h2>
+            <p style={{ color: "var(--gray-500)", fontSize: "1rem", maxWidth: "480px", margin: "0 auto" }}>
+              From discovery to post-visit review — EzyCut handles the entire journey.
+            </p>
+          </div>
 
-      <section className="grid md:grid-cols-3 gap-6 px-8 py-16 max-w-7xl mx-auto w-full">
-
-        <div className="border rounded-2xl p-6 shadow-sm">
-
-          <h3 className="font-semibold text-xl">
-            Easy Booking
-          </h3>
-
-          <p className="mt-3 text-gray-600">
-            Find available slots and book
-            appointments instantly.
-          </p>
-
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.5rem" }}>
+            {features.map(({ icon: Icon, title, description, color, bg }) => (
+              <div key={title} className="card card-hover" style={{ padding: "2rem" }}>
+                <div style={{
+                  width: "3rem", height: "3rem",
+                  borderRadius: "var(--radius-md)",
+                  background: bg,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  marginBottom: "1.25rem",
+                }}>
+                  <Icon size={22} style={{ color }} strokeWidth={2} />
+                </div>
+                <h3 style={{ fontWeight: 700, fontSize: "1.0625rem", color: "var(--gray-800)", marginBottom: "0.5rem" }}>
+                  {title}
+                </h3>
+                <p style={{ color: "var(--gray-500)", fontSize: "0.9rem", lineHeight: 1.65 }}>
+                  {description}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
-
-        <div className="border rounded-2xl p-6 shadow-sm">
-
-          <h3 className="font-semibold text-xl">
-            Queue Tracking
-          </h3>
-
-          <p className="mt-3 text-gray-600">
-            Monitor queue status in real time
-            and avoid unnecessary waiting.
-          </p>
-
-        </div>
-
-        <div className="border rounded-2xl p-6 shadow-sm">
-
-          <h3 className="font-semibold text-xl">
-            Verified Reviews
-          </h3>
-
-          <p className="mt-3 text-gray-600">
-            Make informed decisions through
-            genuine customer feedback.
-          </p>
-
-        </div>
-
       </section>
 
       {/* How It Works */}
-
-      <section className="py-20 px-8 bg-gray-50">
-
-        <div className="max-w-6xl mx-auto">
-
-          <h2 className="text-3xl font-bold text-center">
-            How It Works
-          </h2>
-
-          <div className="grid md:grid-cols-3 gap-8 mt-12">
-
-            <div className="text-center">
-
-              <div className="w-14 h-14 mx-auto rounded-full bg-black text-white flex items-center justify-center text-xl font-bold">
-                1
-              </div>
-
-              <h3 className="mt-4 text-xl font-semibold">
-                Choose Salon
-              </h3>
-
-              <p className="mt-2 text-gray-600">
-                Explore verified salons near you.
-              </p>
-
-            </div>
-
-            <div className="text-center">
-
-              <div className="w-14 h-14 mx-auto rounded-full bg-black text-white flex items-center justify-center text-xl font-bold">
-                2
-              </div>
-
-              <h3 className="mt-4 text-xl font-semibold">
-                Book Appointment
-              </h3>
-
-              <p className="mt-2 text-gray-600">
-                Select service, date and time slot.
-              </p>
-
-            </div>
-
-            <div className="text-center">
-
-              <div className="w-14 h-14 mx-auto rounded-full bg-black text-white flex items-center justify-center text-xl font-bold">
-                3
-              </div>
-
-              <h3 className="mt-4 text-xl font-semibold">
-                Skip Waiting
-              </h3>
-
-              <p className="mt-2 text-gray-600">
-                Arrive on time and avoid queues.
-              </p>
-
-            </div>
-
+      <section style={{ padding: "5rem 0", background: "white" }}>
+        <div className="page-container">
+          <div style={{ textAlign: "center", marginBottom: "3rem" }}>
+            <h2 style={{ fontSize: "2rem", fontWeight: 800, color: "var(--gray-800)", letterSpacing: "-0.02em", marginBottom: "0.75rem" }}>
+              How It Works
+            </h2>
+            <p style={{ color: "var(--gray-500)", fontSize: "1rem" }}>
+              From browsing to booking in under 60 seconds.
+            </p>
           </div>
 
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1.5rem" }}>
+            {steps.map(({ num, title, desc }) => (
+              <div key={num} style={{ textAlign: "center", padding: "1.5rem" }}>
+                <div style={{
+                  width: "3.5rem", height: "3.5rem",
+                  borderRadius: "50%",
+                  background: "var(--brand-primary)",
+                  color: "white",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  margin: "0 auto 1.25rem",
+                  fontSize: "0.9375rem", fontWeight: 800,
+                }}>
+                  {num}
+                </div>
+                <h3 style={{ fontWeight: 700, fontSize: "1rem", color: "var(--gray-800)", marginBottom: "0.5rem" }}>
+                  {title}
+                </h3>
+                <p style={{ color: "var(--gray-500)", fontSize: "0.875rem", lineHeight: 1.65 }}>
+                  {desc}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
-
       </section>
 
-      {/* CTA */}
+      {/* CTA Banner */}
+      <section style={{
+        padding: "5rem 0",
+        background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+        textAlign: "center",
+      }}>
+        <div className="page-container">
+          <h2 style={{ fontSize: "2rem", fontWeight: 800, color: "white", letterSpacing: "-0.02em", marginBottom: "1rem" }}>
+            Ready to Book Your Next Appointment?
+          </h2>
+          <p style={{ color: "rgba(255,255,255,0.75)", fontSize: "1.0625rem", marginBottom: "2rem" }}>
+            Join thousands of satisfied customers using EzyCut every day.
+          </p>
 
-      <section className="text-center py-20">
-
-        <h2 className="text-3xl font-bold">
-          Ready To Book Your Next Appointment?
-        </h2>
-
-        {!token ? (
-          <Link
-            to="/register"
-            className="inline-block mt-6 px-8 py-3 rounded-xl bg-black text-white hover:opacity-90"
-          >
-            Join EzyCut
-          </Link>
-        ) : (
-          <Link
-            to="/salons"
-            className="inline-block mt-6 px-8 py-3 rounded-xl bg-black text-white hover:opacity-90"
-          >
-            Explore Salons
-          </Link>
-        )}
-
+          {!token ? (
+            <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
+              <Link to="/register" className="btn btn-lg" style={{ background: "white", color: "var(--brand-accent)", fontWeight: 700 }}>
+                Join EzyCut — It's Free
+              </Link>
+              <Link to="/salons" className="btn btn-lg" style={{ background: "rgba(255,255,255,0.15)", color: "white", border: "1.5px solid rgba(255,255,255,0.3)" }}>
+                Browse Salons
+              </Link>
+            </div>
+          ) : (
+            <Link to="/salons" className="btn btn-lg" style={{ background: "white", color: "var(--brand-accent)", fontWeight: 700, gap: "0.5rem" }}>
+              Explore Salons
+              <ArrowRight size={18} />
+            </Link>
+          )}
+        </div>
       </section>
-
-      <Footer />
-
     </div>
   );
 };

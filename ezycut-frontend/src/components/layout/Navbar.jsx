@@ -1,112 +1,142 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useState } from "react";
+import {
+  Scissors,
+  Bell,
+  Star,
+  CreditCard,
+  Calendar,
+  Clock,
+  User,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  X,
+} from "lucide-react";
 import useAuthStore from "../../store/auth.store";
 
 const Navbar = () => {
   const navigate = useNavigate();
-const user = useAuthStore(
-  (state) => state.user
-);
-  const token = useAuthStore(
-    (state) => state.token
-  );
-
-  const logout = useAuthStore(
-    (state) => state.logout
-  );
+  const user = useAuthStore((state) => state.user);
+  const token = useAuthStore((state) => state.token);
+  const logout = useAuthStore((state) => state.logout);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
     navigate("/");
+    setMenuOpen(false);
   };
 
+  const customerLinks = [
+    { to: "/my-bookings", label: "Bookings", icon: Calendar },
+    { to: "/my-queue", label: "Queue", icon: Clock },
+    { to: "/my-reviews", label: "Reviews", icon: Star },
+    { to: "/payment-history", label: "Payments", icon: CreditCard },
+    { to: "/notifications", label: "Alerts", icon: Bell },
+    { to: "/profile", label: "Profile", icon: User },
+  ];
+
   return (
-    <nav className="flex items-center justify-between px-8 py-5 shadow-sm">
+    <nav className="navbar">
+      {/* Brand */}
+      <Link to="/" className="navbar-brand">
+        <Scissors size={22} strokeWidth={2.5} style={{ color: "var(--brand-accent)" }} />
+        <span>Ezy<span>Cut</span></span>
+      </Link>
 
-      <h1 className="text-2xl font-bold">
-        EzyCut
-      </h1>
-
-      <div className="flex gap-4">
-
+      {/* Desktop Nav */}
+      <div className="navbar-links" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         {!token ? (
           <>
-            <Link
-              to="/login"
-              className="px-5 py-2 rounded-lg border"
-            >
+            <NavLink to="/salons" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+              Explore
+            </NavLink>
+            <NavLink to="/track" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+              Track Queue
+            </NavLink>
+            <NavLink to="/login" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
               Login
-            </Link>
-
-            <Link
-              to="/register"
-              className="px-5 py-2 rounded-lg bg-black text-white"
-            >
-              Register
+            </NavLink>
+            <Link to="/register" className="btn btn-primary" style={{ marginLeft: "0.25rem" }}>
+              Get Started
             </Link>
           </>
         ) : (
           <>
-            
+            <NavLink to="/salons" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+              Salons
+            </NavLink>
+            <NavLink to="/track" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+              Track Queue
+            </NavLink>
 
+            {/* Customer links */}
+            {user?.role === "customer" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                {customerLinks.map(({ to, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
+                    style={{ fontSize: "0.8125rem" }}
+                  >
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
 
-           <div className="flex items-center gap-4">
+            {/* Owner dashboard + profile/notifications */}
+            {user?.role === "salon_owner" && (
+              <>
+                <Link to="/owner/dashboard" className="btn btn-primary btn-sm" style={{ marginLeft: "0.25rem" }}>
+                  <LayoutDashboard size={14} />
+                  Dashboard
+                </Link>
+                <NavLink to="/notifications" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`} style={{ fontSize: "0.8125rem" }}>
+                  <Bell size={14} />
+                </NavLink>
+                <NavLink to="/profile" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`} style={{ fontSize: "0.8125rem" }}>
+                  Profile
+                </NavLink>
+              </>
+            )}
+            {user?.role === "admin" && (
+              <Link to="/admin/dashboard" className="btn btn-primary btn-sm" style={{ marginLeft: "0.25rem" }}>
+                <LayoutDashboard size={14} />
+                Admin Panel
+              </Link>
+            )}
 
-  {user && (
-    <span className="font-medium">
-      Hello, {user.name}
-    </span>
-  )}
-
-  
-
-   <Link
-  to="/notifications"
-  className="px-5 py-2 rounded-lg border"
->
-  🔔 
-</Link>
-
-   <Link
-  to="/my-reviews"
-  className="px-5 py-2 rounded-lg border"
->
-  My Reviews
-</Link>
-
-   <Link
-  to="/payment-history"
-  className="px-5 py-2 rounded-lg border"
->
-  Payments
-</Link>
-
-   <Link
-  to="/my-bookings"
-  className="px-5 py-2 rounded-lg border"
->
-  My Bookings
-</Link>
-
-<Link
-  to="/my-queue"
-  className="px-5 py-2 rounded-lg border"
->
-  My Queue
-</Link>
-
-  <button
-    onClick={handleLogout}
-    className="px-5 py-2 rounded-lg bg-red-500 text-white"
-  >
-    Logout
-  </button>
-
-</div>
+            {/* User info + logout */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginLeft: "0.5rem", paddingLeft: "0.75rem", borderLeft: "1px solid var(--gray-200)" }}>
+              <div style={{
+                width: "2rem", height: "2rem", borderRadius: "50%",
+                background: "var(--brand-primary)", color: "white",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "0.6875rem", fontWeight: 700,
+              }}>
+                {user?.name?.slice(0, 2).toUpperCase() || "ME"}
+              </div>
+              <button className="btn btn-outline btn-sm" onClick={handleLogout} style={{ gap: "0.375rem" }}>
+                <LogOut size={13} />
+                Logout
+              </button>
+            </div>
           </>
         )}
-
       </div>
 
+      {/* Mobile toggle */}
+      <button
+        className="btn btn-outline btn-icon"
+        style={{ display: "none" }}
+        onClick={() => setMenuOpen(!menuOpen)}
+        aria-label="Toggle menu"
+      >
+        {menuOpen ? <X size={18} /> : <Menu size={18} />}
+      </button>
     </nav>
   );
 };

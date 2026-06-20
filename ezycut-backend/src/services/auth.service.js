@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/user.model");
 
 const registerUser = async (data) => {
-  const { name, email, phone, password } = data;
+  const { name, email, phone, password, role } = data;
 
   const existingUser = await User.findOne({
     $or: [{ email }, { phone }],
@@ -20,6 +20,7 @@ const registerUser = async (data) => {
     email,
     phone,
     password: hashedPassword,
+    role: role || "customer",
   });
 
   return user;

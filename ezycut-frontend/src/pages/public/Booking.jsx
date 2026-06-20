@@ -1,424 +1,323 @@
+import { useEffect, useState } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import {
-  useEffect,
-  useState,
-} from "react";
-
-import {
-  useParams,
-  useNavigate,
-} from "react-router-dom";
-
-import Navbar from "../../components/layout/Navbar";
-import Footer from "../../components/layout/Footer";
-
-import {
-  getServiceById,
-} from "../../api/service.api";
-
-import {
-  getAvailableSlots,
-} from "../../api/booking.api";
-
-import {
-  createOrder,
-  verifyPayment,
-} from "../../api/payment.api";
+  ArrowLeft,
+  Calendar,
+  Clock,
+  IndianRupee,
+  Tag,
+  FileText,
+  CheckCircle,
+} from "lucide-react";
+import { getServiceById } from "../../api/service.api";
+import { getAvailableSlots } from "../../api/booking.api";
+import { createOrder, verifyPayment } from "../../api/payment.api";
+import Loader from "../../components/common/Loader";
+import toast from "../../utils/toast";
 
 const Booking = () => {
-  const { serviceId } =
-    useParams();
+  const { serviceId } = useParams();
+  const navigate = useNavigate();
 
-  const navigate =
-    useNavigate();
+  const [service, setService] = useState(null);
+  const [date, setDate] = useState("");
+  const [slots, setSlots] = useState([]);
+  const [selectedSlot, setSelectedSlot] = useState("");
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [payLoading, setPayLoading] = useState(false);
 
-  const [service, setService] =
-    useState(null);
-
-  const [date, setDate] =
-    useState("");
-
-  const [slots, setSlots] =
-    useState([]);
-
-  const [selectedSlot, setSelectedSlot] =
-    useState("");
-
-  const [notes, setNotes] =
-    useState("");
-
-  const [loading, setLoading] =
-    useState(true);
+  // Today's date for min input
+  const today = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
-    const fetchService =
-      async () => {
-        try {
-          const data =
-            await getServiceById(
-              serviceId
-            );
-
-          setService(
-            data.service
-          );
-        } catch (error) {
-          console.log(error);
-        } finally {
-          setLoading(false);
-        }
-      };
+    const fetchService = async () => {
+      try {
+        const data = await getServiceById(serviceId);
+        setService(data.service);
+      } catch (err) {
+        toast.error("Service not found.");
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
     fetchService();
   }, [serviceId]);
 
-  const handleDateChange =
-    async (e) => {
-      const selectedDate =
-        e.target.value;
+  const handleDateChange = async (e) => {
+    const selectedDate = e.target.value;
+    setDate(selectedDate);
+    setSelectedSlot("");
+    setSlots([]);
 
-      setDate(
-        selectedDate
-      );
+    if (!selectedDate) return;
 
-      setSelectedSlot("");
-
-      try {
-        const data =
-          await getAvailableSlots(
-            service.salon,
-            service._id,
-            selectedDate
-          );
-
-        setSlots(
-          data.slots
-        );
-      } catch (error) {
-        console.log(error);
+    setSlotsLoading(true);
+    try {
+      const data = await getAvailableSlots(service.salon, service._id, selectedDate);
+      setSlots(data.slots || []);
+      if (!data.slots?.length) {
+        toast.info("No available slots for this date. Try another day.");
       }
-    };
+    } catch (err) {
+      toast.error("Failed to fetch available slots.");
+      console.error(err);
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
 
-  const loadRazorpay =
-    () => {
-      return new Promise(
-        (resolve) => {
-          const script =
-            document.createElement(
-              "script"
-            );
+  const loadRazorpay = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) { resolve(true); return; }
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
 
-          script.src =
-            "https://checkout.razorpay.com/v1/checkout.js";
+  const handlePayment = async () => {
+    if (!date) { toast.warning("Please select a date."); return; }
+    if (!selectedSlot) { toast.warning("Please select a time slot."); return; }
 
-          script.onload =
-            () =>
-              resolve(true);
+    setPayLoading(true);
 
-          script.onerror =
-            () =>
-              resolve(false);
+    const loaded = await loadRazorpay();
+    if (!loaded) {
+      toast.error("Failed to load payment gateway. Please check your connection.");
+      setPayLoading(false);
+      return;
+    }
 
-          document.body.appendChild(
-            script
-          );
-        }
-      );
-    };
+    try {
+      const orderData = await createOrder({
+        salonId: service.salon,
+        serviceId: service._id,
+        bookingDate: date,
+        startTime: selectedSlot,
+        notes,
+      });
 
-  const handlePayment =
-    async () => {
-      if (!date) {
-        return alert(
-          "Please select a date"
-        );
-      }
+      const options = {
+        key: orderData.order.key,
+        amount: orderData.order.amount,
+        currency: orderData.order.currency,
+        order_id: orderData.order.orderId,
+        name: "EzyCut",
+        description: service.name,
+        theme: { color: "#6366f1" },
+        handler: async function (response) {
+          try {
+            await verifyPayment({
+              paymentId: orderData.order.paymentId,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            toast.success("Booking confirmed! 🎉");
+            navigate("/my-bookings");
+          } catch (err) {
+            toast.error("Payment verification failed. Contact support.");
+            console.error(err);
+          } finally {
+            setPayLoading(false);
+          }
+        },
+      };
 
-      if (!selectedSlot) {
-        return alert(
-          "Please select a slot"
-        );
-      }
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", () => {
+        toast.error("Payment failed. Please try again.");
+        setPayLoading(false);
+      });
+      rzp.open();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Booking failed. Please try again.");
+      setPayLoading(false);
+    }
+  };
 
-      const loaded =
-        await loadRazorpay();
-
-      if (!loaded) {
-        return alert(
-          "Failed to load Razorpay"
-        );
-      }
-
-      try {
-        const orderData =
-          await createOrder({
-            salonId:
-              service.salon,
-            serviceId:
-              service._id,
-            bookingDate:
-              date,
-            startTime:
-              selectedSlot,
-            notes,
-          });
-
-        const options = {
-          key:
-            orderData.order.key,
-
-          amount:
-            orderData.order.amount,
-
-          currency:
-            orderData.order.currency,
-
-          order_id:
-            orderData.order.orderId,
-
-          name:
-            "EzyCut",
-
-          description:
-            service.name,
-
-          handler:
-            async function (
-              response
-            ) {
-              try {
-                const verify =
-                  await verifyPayment({
-                    paymentId:
-                      orderData.order.paymentId,
-
-                    razorpay_order_id:
-                      response.razorpay_order_id,
-
-                    razorpay_payment_id:
-                      response.razorpay_payment_id,
-
-                    razorpay_signature:
-                      response.razorpay_signature,
-                  });
-
-                console.log(
-                  verify
-                );
-
-                alert(
-                  "Booking Successful 🎉"
-                );
-
-                navigate(
-                  "/my-bookings"
-                );
-              } catch (
-                error
-              ) {
-                console.log(
-                  error
-                );
-
-                alert(
-                  "Payment Verification Failed"
-                );
-              }
-            },
-        };
-
-        const rzp =
-          new window.Razorpay(
-            options
-          );
-
-        rzp.open();
-      } catch (error) {
-        console.log(error);
-
-        alert(
-          error.response?.data
-            ?.message ||
-            "Payment Failed"
-        );
-      }
-    };
-
-  if (loading) {
-    return (
-      <>
-        <Navbar />
-
-        <div className="min-h-screen flex items-center justify-center">
-          Loading...
-        </div>
-
-        <Footer />
-      </>
-    );
-  }
+  if (loading) return <Loader message="Loading service details..." />;
 
   if (!service) {
     return (
-      <>
-        <Navbar />
-
-        <div className="min-h-screen flex items-center justify-center">
-          Service not found
-        </div>
-
-        <Footer />
-      </>
+      <div style={{ padding: "3rem 0", textAlign: "center" }}>
+        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--gray-700)", marginBottom: "1rem" }}>
+          Service Not Found
+        </h2>
+        <Link to="/salons" className="btn btn-outline">← Back to Salons</Link>
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div style={{ padding: "2rem 0" }}>
+      <div className="page-container" style={{ maxWidth: "760px" }}>
+        {/* Back */}
+        <Link to={`/salons/${service.salon}`} className="btn btn-outline btn-sm" style={{ gap: "0.375rem", marginBottom: "1.5rem" }}>
+          <ArrowLeft size={14} />
+          Back to Salon
+        </Link>
 
-      <Navbar />
+        <h1 className="page-title" style={{ marginBottom: "1.5rem" }}>Book Appointment</h1>
 
-      <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-10">
-
-        <h1 className="text-3xl font-bold">
-          Book Appointment
-        </h1>
-
-        <div className="mt-6 border rounded-xl p-6">
-
-          <h2 className="text-2xl font-semibold">
-            {service.name}
-          </h2>
-
-          <p className="mt-2 text-gray-600">
-            {service.description}
-          </p>
-
-          <div className="mt-4 flex gap-6">
-
-            <span>
-              ₹{service.price}
-            </span>
-
-            <span>
-              {service.duration}
-              mins
-            </span>
-
+        {/* Service Info Card */}
+        <div className="card" style={{ marginBottom: "1.5rem" }}>
+          <div style={{
+            padding: "1.5rem",
+            background: "linear-gradient(135deg, var(--brand-primary) 0%, #312e81 100%)",
+            borderRadius: "var(--radius-xl) var(--radius-xl) 0 0",
+          }}>
+            {service.category && (
+              <span style={{
+                fontSize: "0.6875rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                color: "#c7d2fe", background: "rgba(99,102,241,0.3)",
+                padding: "0.2rem 0.5rem", borderRadius: "var(--radius-full)",
+                display: "inline-flex", alignItems: "center", gap: "0.25rem", marginBottom: "0.75rem",
+              }}>
+                <Tag size={10} />{service.category}
+              </span>
+            )}
+            <h2 style={{ fontSize: "1.375rem", fontWeight: 800, color: "white", marginBottom: "0.375rem" }}>
+              {service.name}
+            </h2>
+            {service.description && (
+              <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "0.9rem" }}>{service.description}</p>
+            )}
           </div>
 
+          <div style={{ padding: "1.25rem", display: "flex", gap: "1.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 700, color: "var(--gray-800)" }}>
+              <IndianRupee size={16} style={{ color: "var(--success)" }} />
+              <span style={{ fontSize: "1.25rem" }}>₹{service.price}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--gray-500)", fontSize: "0.9rem" }}>
+              <Clock size={15} />
+              {service.duration} minutes
+            </div>
+          </div>
         </div>
 
-        <div className="mt-8">
-
-          <label className="block mb-2 font-medium">
+        {/* Date Picker */}
+        <div className="card" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
+          <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--gray-800)", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Calendar size={16} style={{ color: "var(--brand-accent)" }} />
             Select Date
-          </label>
-
+          </h3>
           <input
             type="date"
             value={date}
-            min={
-              new Date()
-                .toISOString()
-                .split("T")[0]
-            }
-            onChange={
-              handleDateChange
-            }
-            className="border rounded-lg p-3"
+            min={today}
+            onChange={handleDateChange}
+            className="form-input"
+            style={{ maxWidth: "240px" }}
           />
-
         </div>
 
-        {slots.length > 0 && (
-
-          <div className="mt-8">
-
-            <h3 className="text-xl font-semibold mb-4">
+        {/* Slots */}
+        {date && (
+          <div className="card" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
+            <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--gray-800)", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Clock size={16} style={{ color: "var(--brand-accent)" }} />
               Available Slots
             </h3>
 
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-
-              {slots.map(
-                (slot) => (
+            {slotsLoading ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", color: "var(--gray-500)", padding: "0.5rem 0" }}>
+                <div className="spinner" style={{ width: "16px", height: "16px" }} />
+                Fetching available slots...
+              </div>
+            ) : slots.length === 0 ? (
+              <p style={{ color: "var(--gray-500)", fontSize: "0.9rem" }}>No slots available for this date.</p>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: "0.625rem" }}>
+                {slots.map((slot) => (
                   <button
                     key={slot}
-                    onClick={() =>
-                      setSelectedSlot(
-                        slot
-                      )
-                    }
-                    className={`border rounded-lg p-3 ${
-                      selectedSlot ===
-                      slot
-                        ? "bg-black text-white"
-                        : ""
-                    }`}
+                    onClick={() => setSelectedSlot(slot)}
+                    className={`btn ${selectedSlot === slot ? "btn-accent" : "btn-outline"}`}
+                    style={{ fontSize: "0.8125rem", fontFamily: "monospace", fontWeight: 700 }}
                   >
                     {slot}
                   </button>
-                )
-              )}
-
-            </div>
-
+                ))}
+              </div>
+            )}
           </div>
-
         )}
 
+        {/* Confirmation & Notes */}
         {selectedSlot && (
+          <div className="card" style={{ padding: "1.5rem" }}>
+            <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--gray-800)", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <CheckCircle size={16} style={{ color: "var(--success)" }} />
+              Confirm Booking
+            </h3>
 
-          <div className="mt-8 border rounded-xl p-5 bg-green-50">
+            {/* Summary */}
+            <div style={{
+              background: "var(--gray-50)",
+              borderRadius: "var(--radius)",
+              padding: "1rem",
+              marginBottom: "1rem",
+              display: "flex", flexDirection: "column", gap: "0.5rem",
+              fontSize: "0.875rem", color: "var(--gray-600)",
+            }}>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <span style={{ color: "var(--gray-400)", minWidth: "80px" }}>Date</span>
+                <span style={{ fontWeight: 600, color: "var(--gray-800)" }}>
+                  {new Date(date).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <span style={{ color: "var(--gray-400)", minWidth: "80px" }}>Time</span>
+                <span style={{ fontWeight: 600, color: "var(--gray-800)", fontFamily: "monospace" }}>{selectedSlot}</span>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <span style={{ color: "var(--gray-400)", minWidth: "80px" }}>Amount</span>
+                <span style={{ fontWeight: 700, color: "var(--gray-800)" }}>₹{service.price}</span>
+              </div>
+            </div>
 
-            <p>
-              Selected Date:
-              {" "}
-              {date}
-            </p>
-
-            <p>
-              Selected Slot:
-              {" "}
-              {selectedSlot}
-            </p>
-
-            <div className="mt-5">
-
-              <label className="block mb-2 font-medium">
-                Notes (Optional)
+            {/* Notes */}
+            <div className="form-group" style={{ marginBottom: "1.25rem" }}>
+              <label className="form-label" style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                <FileText size={13} />
+                Special Requests (Optional)
               </label>
-
               <textarea
                 value={notes}
-                onChange={(e) =>
-                  setNotes(
-                    e.target.value
-                  )
-                }
+                onChange={(e) => setNotes(e.target.value)}
                 rows="3"
-                className="w-full border rounded-lg p-3"
-                placeholder="Any special request..."
+                className="form-input form-textarea"
+                placeholder="Any special requests, preferences, or notes for the salon..."
               />
-
             </div>
 
             <button
-              onClick={
-                handlePayment
-              }
-              className="mt-5 px-6 py-3 bg-black text-white rounded-lg"
+              onClick={handlePayment}
+              disabled={payLoading}
+              className="btn btn-accent btn-lg btn-full"
+              style={{ gap: "0.5rem" }}
             >
-              Pay ₹{service.price}
+              {payLoading ? (
+                <><div className="spinner" style={{ width: "16px", height: "16px", borderWidth: "2px", borderTopColor: "white" }} /> Processing...</>
+              ) : (
+                <><IndianRupee size={16} /> Pay ₹{service.price} & Confirm</>
+              )}
             </button>
 
+            <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--gray-400)", marginTop: "0.75rem" }}>
+              🔒 Secured by Razorpay. Your payment info is never stored.
+            </p>
           </div>
-
         )}
-
-      </main>
-
-      <Footer />
-
+      </div>
     </div>
   );
 };
