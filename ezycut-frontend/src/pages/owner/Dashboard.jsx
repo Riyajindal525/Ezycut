@@ -1,16 +1,34 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 import useAuthStore from "../../store/auth.store";
-import { getAllSalons, createSalon } from "../../api/salon.api";
-import {
-  getOwnerOverview,
-  getOwnerRecentBookings,
-  getOwnerTopServices,
-  getOwnerMonthlyRevenue,
-} from "../../api/dashboard.api";
+import useSalonStore from "../../store/salon.store";
+import { getAllSalons, createSalon, updateSalon } from "../../api/salon.api";
+import { getSalonBookings } from "../../api/booking.api";
+import { getSalonQueue } from "../../api/queue.api";
 import toast from "../../utils/toast";
+import Loader from "../../components/common/Loader";
+import {
+  TrendingUp,
+  Calendar,
+  Clock,
+  Star,
+  DollarSign,
+  MapPin,
+  Phone,
+  Plus,
+  ArrowRight,
+  Info,
+  Building,
+  User,
+  ListOrdered,
+  ChevronRight
+} from "lucide-react";
 
 const OwnerDashboard = () => {
   const user = useAuthStore((state) => state.user);
+  const { activeSalonId, setActiveSalonId, salons, fetchSalons } = useSalonStore();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // States
   const [salon, setSalon] = useState(null);
@@ -36,64 +54,144 @@ const OwnerDashboard = () => {
     longitude: "",
     openingTime: "09:00 AM",
     closingTime: "09:00 PM",
+    imageUrl: "",
   });
   const [registerLoading, setRegisterLoading] = useState(false);
 
-  const fetchDashboardData = async () => {
+  const ownedSalons = salons.filter(
+    (s) => s.owner?._id === user?.id || s.owner === user?.id
+  );
+
+  // Parse query params to toggle register form
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("register") === "true") {
+      setShowRegisterForm(true);
+    } else {
+      setShowRegisterForm(false);
+    }
+  }, [location.search]);
+
+  // Compute metrics from bookings and queue
+  const loadActiveSalonData = async (salonObj) => {
     setLoading(true);
     try {
-      const [overviewData, bookingsData, servicesData, monthlyData] = await Promise.all([
-        getOwnerOverview(),
-        getOwnerRecentBookings(),
-        getOwnerTopServices(),
-        getOwnerMonthlyRevenue(),
+      const [bookingsData, queueData] = await Promise.all([
+        getSalonBookings(salonObj._id),
+        getSalonQueue(salonObj._id),
       ]);
 
-      setOverview(overviewData.overview);
-      setRecentBookings(bookingsData.bookings);
-      setTopServices(servicesData.services);
-      setMonthlyRevenue(monthlyData.revenue || []);
+      const allBookings = bookingsData.bookings || [];
+      const queueList = queueData.queue || [];
+
+      // Calculations
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const todayCount = allBookings.filter((b) => {
+        const bDate = new Date(b.bookingDate);
+        return bDate >= today && bDate < tomorrow && b.status !== "cancelled_by_customer" && b.status !== "cancelled_by_owner";
+      }).length;
+
+      const completed = allBookings.filter((b) => b.status === "completed");
+      const revenueSum = completed.reduce((sum, b) => sum + b.totalAmount, 0);
+
+      // Recent Bookings (top 5)
+      const recent = allBookings.slice(0, 5);
+
+      // Top Performing Services
+      const serviceStats = {};
+      completed.forEach((b) => {
+        const sName = b.service?.name || "General";
+        if (!serviceStats[sName]) {
+          serviceStats[sName] = { service: sName, totalBookings: 0, revenue: 0 };
+        }
+        serviceStats[sName].totalBookings += 1;
+        serviceStats[sName].revenue += b.totalAmount;
+      });
+      const topS = Object.values(serviceStats)
+        .sort((a, b) => b.totalBookings - a.totalBookings)
+        .slice(0, 5);
+
+      // Monthly Revenue Comparisons
+      const monthlyStats = {};
+      completed.forEach((b) => {
+        const date = new Date(b.bookingDate);
+        const month = date.getMonth() + 1;
+        const year = date.getFullYear();
+        const key = `${year}-${month}`;
+        if (!monthlyStats[key]) {
+          monthlyStats[key] = { _id: { month, year }, revenue: 0, bookings: 0 };
+        }
+        monthlyStats[key].revenue += b.totalAmount;
+        monthlyStats[key].bookings += 1;
+      });
+      const monthlyRev = Object.values(monthlyStats).sort((a, b) => {
+        if (a._id.year !== b._id.year) return a._id.year - b._id.year;
+        return a._id.month - b._id.month;
+      });
+
+      setOverview({
+        totalRevenue: revenueSum,
+        todayBookings: todayCount,
+        completedBookings: completed.length,
+        activeQueue: queueList.length,
+        averageRating: salonObj.rating || 0,
+        totalReviews: salonObj.totalReviews || 0,
+      });
+      setRecentBookings(recent);
+      setTopServices(topS);
+      setMonthlyRevenue(monthlyRev);
+      setError("");
     } catch (err) {
       console.error(err);
-      setError("Failed to load dashboard metrics. Ensure your salon is approved.");
+      setError("Failed to load salon analytics.");
     } finally {
       setLoading(false);
     }
   };
 
-  const checkSalonOwnership = async () => {
-    setSalonLoading(true);
-    setError("");
-    try {
-      const salonsResponse = await getAllSalons();
-      const ownerSalon = salonsResponse.salons.find(
-        (s) => s.owner?._id === user?.id || s.owner === user?.id
-      );
-
-      if (ownerSalon) {
-        setSalon(ownerSalon);
-        if (ownerSalon.isApproved) {
-          await fetchDashboardData();
-        } else {
-          setError("Your salon registration is pending administrator approval.");
-        }
-      } else {
-        setShowRegisterForm(true);
-      }
-    } catch (err) {
-      console.error(err);
-      setError("Failed to verify salon association.");
-    } finally {
-      setSalonLoading(false);
-    }
-  };
-
+  // Sync state with active salon selection
   useEffect(() => {
+    const initSalon = async () => {
+      setSalonLoading(true);
+      await fetchSalons();
+
+      if (ownedSalons.length === 0) {
+        setShowRegisterForm(true);
+        setSalon(null);
+        setSalonLoading(false);
+        return;
+      }
+
+      // Check active selection
+      let currentSalon = ownedSalons.find((s) => s._id === activeSalonId);
+      if (!currentSalon) {
+        currentSalon = ownedSalons[0];
+        setActiveSalonId(currentSalon._id);
+      }
+
+      setSalon(currentSalon);
+
+      if (currentSalon.isApproved) {
+        await loadActiveSalonData(currentSalon);
+      } else {
+        // Pending state
+        setOverview(null);
+        setRecentBookings([]);
+        setTopServices([]);
+        setMonthlyRevenue([]);
+      }
+      setSalonLoading(false);
+    };
+
     if (user) {
-      checkSalonOwnership();
+      initSalon();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, activeSalonId, salons.length]);
 
   const handleChange = (e) => {
     setFormData({
@@ -111,11 +209,11 @@ const OwnerDashboard = () => {
             latitude: position.coords.latitude.toString(),
             longitude: position.coords.longitude.toString(),
           }));
-          toast.success("Location coordinates captured!");
+          toast.success("Location coordinates captured! 📍");
         },
         (err) => {
           console.error(err);
-          toast.error("Failed to detect location. Please enter manually.");
+          toast.error("Failed to detect location. Please enter coordinates manually.");
         }
       );
     } else {
@@ -127,17 +225,46 @@ const OwnerDashboard = () => {
     e.preventDefault();
     setRegisterLoading(true);
     try {
-      await createSalon({
+      const res = await createSalon({
         ...formData,
         latitude: Number(formData.latitude),
         longitude: Number(formData.longitude),
       });
-      toast.success("Salon registered successfully! Please wait for approval.");
-      setShowRegisterForm(false);
-      await checkSalonOwnership();
+
+      if (formData.imageUrl.trim() && res.salon?._id) {
+        await updateSalon(res.salon._id, {
+          images: [formData.imageUrl.trim()]
+        });
+      }
+
+      toast.success("Salon profile submitted successfully! Please wait for admin approval. ⏳");
+      
+      // Refresh list and select the new salon
+      const updatedSalons = await fetchSalons(true);
+      const newSalon = updatedSalons.find((s) => s.name === formData.name);
+      if (newSalon) {
+        setActiveSalonId(newSalon._id);
+      }
+      
+      setFormData({
+        name: "",
+        description: "",
+        address: "",
+        city: "",
+        state: "",
+        pincode: "",
+        phone: "",
+        latitude: "",
+        longitude: "",
+        openingTime: "09:00 AM",
+        closingTime: "09:00 PM",
+        imageUrl: "",
+      });
+
+      navigate("/owner/dashboard");
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || "Failed to register salon. Double check all fields.");
+      toast.error(err.response?.data?.message || "Failed to register salon. Please review fields.");
     } finally {
       setRegisterLoading(false);
     }
@@ -146,177 +273,194 @@ const OwnerDashboard = () => {
   const getMonthName = (monthNum) => {
     const date = new Date();
     date.setMonth(monthNum - 1);
-    return date.toLocaleString("default", { month: "long" });
+    return date.toLocaleString("default", { month: "short" });
   };
 
-  // Rendering conditional states
   if (salonLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
-      </div>
-    );
+    return <Loader message="Verifying salon profile association..." />;
   }
 
+  // State 1: Register Salon Form
   if (showRegisterForm) {
     return (
-      <div className="max-w-2xl mx-auto bg-white p-8 rounded-3xl border border-gray-100 shadow-sm space-y-6">
-        <div>
-          <h3 className="text-2xl font-extrabold text-gray-800">Register Your Salon</h3>
-          <p className="text-sm text-gray-400 font-semibold mt-1">Get started by setting up your salon profile</p>
+      <div className="max-w-4xl mx-auto bg-[#121214] p-10 md:p-12 rounded-3xl border border-zinc-850 shadow-2xl space-y-8 animate-fade-in">
+        <div className="flex justify-between items-center pb-4 border-b border-zinc-850">
+          <div>
+            <span className="inline-flex bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full text-xs font-bold text-[#fbbf24] uppercase tracking-wider mb-2.5">
+              Onboarding
+            </span>
+            <h3 className="text-3xl font-black text-white">Register Salon Profile</h3>
+            <p className="text-sm text-zinc-400 font-medium mt-1">Configure details to enlist your shop on EzyCut</p>
+          </div>
+          {ownedSalons.length > 0 && (
+            <button
+              onClick={() => navigate("/owner/dashboard")}
+              className="px-5 py-2.5 text-sm font-semibold border border-zinc-800 rounded-xl hover:bg-zinc-800 text-zinc-300 transition-colors"
+            >
+              Cancel
+            </button>
+          )}
         </div>
 
-        <form onSubmit={handleRegisterSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Salon Name</label>
+        <form onSubmit={handleRegisterSubmit} className="space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Salon Name</label>
               <input
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 placeholder="e.g. Sharp & Sleek Salon"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Contact Phone</label>
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Contact Phone</label>
               <input
                 type="tel"
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 placeholder="e.g. +91 9876543210"
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Description</label>
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Description</label>
             <textarea
               name="description"
               value={formData.description}
               onChange={handleChange}
-              className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
-              placeholder="Tell customers about your salon..."
-              rows="2"
+              rows="4"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
+              placeholder="Provide a compelling catalog description for customers..."
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Street Address</label>
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Salon Image URL</label>
+            <input
+              type="url"
+              name="imageUrl"
+              value={formData.imageUrl}
+              onChange={handleChange}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
+              placeholder="e.g. https://images.unsplash.com/photo-... (optional)"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Street Address</label>
             <input
               type="text"
               name="address"
               value={formData.address}
               onChange={handleChange}
               required
-              className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
-              placeholder="e.g. 1st Floor, Metro Plaza"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
+              placeholder="e.g. Shop 42, 1st Floor, Royal Complex"
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">City</label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">City</label>
               <input
                 type="text"
                 name="city"
                 value={formData.city}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 placeholder="City"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">State</label>
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">State</label>
               <input
                 type="text"
                 name="state"
                 value={formData.state}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 placeholder="State"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Pincode</label>
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Pincode</label>
               <input
                 type="text"
                 name="pincode"
                 value={formData.pincode}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 placeholder="Pincode"
               />
             </div>
           </div>
 
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Geolocation Coordinates</span>
+          <div className="p-6 bg-zinc-950 rounded-2xl border border-zinc-850 space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+              <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Geolocation Coordinates</span>
               <button
                 type="button"
                 onClick={handleGetLocation}
-                className="px-3 py-1.5 text-xs font-bold bg-slate-800 text-white rounded-lg hover:opacity-90 transition-opacity"
+                className="px-4 py-2 text-xs font-bold bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5"
               >
                 Use Current Location 📍
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <input
-                  type="number"
-                  step="any"
-                  name="latitude"
-                  value={formData.latitude}
-                  onChange={handleChange}
-                  required
-                  className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800 bg-white"
-                  placeholder="Latitude (e.g. 28.6139)"
-                />
-              </div>
-              <div>
-                <input
-                  type="number"
-                  step="any"
-                  name="longitude"
-                  value={formData.longitude}
-                  onChange={handleChange}
-                  required
-                  className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800 bg-white"
-                  placeholder="Longitude (e.g. 77.2090)"
-                />
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <input
+                type="number"
+                step="any"
+                name="latitude"
+                value={formData.latitude}
+                onChange={handleChange}
+                required
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
+                placeholder="Latitude (e.g. 28.61)"
+              />
+              <input
+                type="number"
+                step="any"
+                name="longitude"
+                value={formData.longitude}
+                onChange={handleChange}
+                required
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
+                placeholder="Longitude (e.g. 77.20)"
+              />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Opening Time</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Opening Time</label>
               <input
                 type="text"
                 name="openingTime"
                 value={formData.openingTime}
                 onChange={handleChange}
-                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 placeholder="e.g. 09:00 AM"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Closing Time</label>
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Closing Time</label>
               <input
                 type="text"
                 name="closingTime"
                 value={formData.closingTime}
                 onChange={handleChange}
-                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 placeholder="e.g. 09:00 PM"
               />
             </div>
@@ -325,12 +469,12 @@ const OwnerDashboard = () => {
           <button
             type="submit"
             disabled={registerLoading}
-            className="w-full py-3.5 bg-black text-white font-semibold rounded-2xl hover:opacity-90 transition-all flex items-center justify-center gap-2"
+            className="btn btn-primary w-full py-4 mt-4 flex items-center justify-center gap-2 font-black text-sm uppercase tracking-wider"
           >
             {registerLoading ? (
               <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                Registering Salon...
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-zinc-950"></div>
+                Registering Shop...
               </>
             ) : (
               "Submit Registration"
@@ -341,21 +485,42 @@ const OwnerDashboard = () => {
     );
   }
 
-  if (error) {
+  // State 2: Active Salon Pending Approval
+  if (salon && !salon.isApproved) {
     return (
-      <div className="bg-red-50 text-red-700 p-6 rounded-2xl border border-red-100 max-w-2xl">
-        <h3 className="text-lg font-bold mb-2">Notice</h3>
-        <p className="font-medium">{error}</p>
+      <div className="max-w-2xl mx-auto bg-[#121214] p-10 rounded-3xl border border-zinc-850 shadow-xl space-y-6 text-center animate-fade-in">
+        <div style={{
+          width: "4.5rem", height: "4.5rem", borderRadius: "50%",
+          background: "rgba(251, 191, 36, 0.08)", border: "1px solid rgba(251, 191, 36, 0.2)",
+          display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto"
+        }}>
+          <Clock size={36} style={{ color: "#fbbf24" }} />
+        </div>
+        
+        <div className="space-y-3">
+          <h3 className="text-2xl font-bold text-white">Registration Under Review</h3>
+          <p className="text-sm text-zinc-400 max-w-md mx-auto leading-relaxed">
+            The profile details for <strong>{salon.name}</strong> have been submitted and are pending review by our administration. We will activate your dashboard once verified.
+          </p>
+        </div>
+
+        <div className="border-t border-zinc-850 pt-8 mt-8 flex flex-col gap-4 items-center">
+          <div className="flex items-center gap-2 text-xs text-zinc-550 font-semibold">
+            <Info size={14} /> Need to list another store?
+          </div>
+          <button
+            onClick={() => navigate("/owner/dashboard?register=true")}
+            className="btn btn-outline px-6 py-2.5 font-bold rounded-xl text-sm"
+          >
+            + Register Another Salon
+          </button>
+        </div>
       </div>
     );
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
-      </div>
-    );
+    return <Loader message="Recalculating salon insights..." />;
   }
 
   const maxRevenue = monthlyRevenue.length > 0
@@ -363,89 +528,129 @@ const OwnerDashboard = () => {
     : 1;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10 md:space-y-12 animate-fade-in text-white">
       {/* Metric Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        
+        {/* Card 1 */}
+        <div className="bg-[#121214] p-8 rounded-3xl border border-white/[0.04] flex flex-col justify-between hover:border-[#fbbf24]/20 hover:-translate-y-1 transition-all duration-300 shadow-md">
           <div className="flex justify-between items-start">
-            <span className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Total Revenue</span>
-            <span className="text-2xl">💰</span>
+            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Total Revenue</span>
+            <div style={{
+              width: "2.25rem", height: "2.25rem", borderRadius: "10px",
+              background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>
+              <DollarSign size={16} style={{ color: "#10b981" }} />
+            </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-3xl font-extrabold text-gray-800">₹{overview?.totalRevenue || 0}</h3>
-            <p className="text-xs text-green-500 font-semibold mt-1">▲ Lifetime completed sales</p>
+          <div className="mt-6">
+            <h3 className="text-4xl font-extrabold text-white tracking-tight">₹{overview?.totalRevenue || 0}</h3>
+            <p className="text-xs text-emerald-400 font-semibold mt-2 flex items-center gap-1">
+              <span>▲</span> Lifetime completed sales
+            </p>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+        {/* Card 2 */}
+        <div className="bg-[#121214] p-8 rounded-3xl border border-white/[0.04] flex flex-col justify-between hover:border-[#fbbf24]/20 hover:-translate-y-1 transition-all duration-300 shadow-md">
           <div className="flex justify-between items-start">
-            <span className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Today's Bookings</span>
-            <span className="text-2xl">📅</span>
+            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Today's Bookings</span>
+            <div style={{
+              width: "2.25rem", height: "2.25rem", borderRadius: "10px",
+              background: "rgba(59, 130, 246, 0.08)", border: "1px solid rgba(59, 130, 246, 0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>
+              <Calendar size={16} style={{ color: "#3b82f6" }} />
+            </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-3xl font-extrabold text-gray-800">{overview?.todayBookings || 0}</h3>
-            <p className="text-xs text-blue-500 font-semibold mt-1">Scheduled for today</p>
+          <div className="mt-6">
+            <h3 className="text-4xl font-extrabold text-white tracking-tight">{overview?.todayBookings || 0}</h3>
+            <p className="text-xs text-blue-400 font-semibold mt-2">Scheduled for today</p>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+        {/* Card 3 */}
+        <div className="bg-[#121214] p-8 rounded-3xl border border-white/[0.04] flex flex-col justify-between hover:border-[#fbbf24]/20 hover:-translate-y-1 transition-all duration-300 shadow-md">
           <div className="flex justify-between items-start">
-            <span className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Active Queue</span>
-            <span className="text-2xl">⌛</span>
+            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Active Queue</span>
+            <div style={{
+              width: "2.25rem", height: "2.25rem", borderRadius: "10px",
+              background: "rgba(251, 191, 36, 0.08)", border: "1px solid rgba(251, 191, 36, 0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>
+              <Clock size={16} style={{ color: "#fbbf24" }} />
+            </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-3xl font-extrabold text-gray-800">{overview?.activeQueue || 0}</h3>
-            <p className="text-xs text-yellow-500 font-semibold mt-1">Clients waiting in-shop</p>
+          <div className="mt-6">
+            <h3 className="text-4xl font-extrabold text-white tracking-tight">{overview?.activeQueue || 0}</h3>
+            <p className="text-xs text-amber-400 font-semibold mt-2">Clients checked-in/waiting</p>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+        {/* Card 4 */}
+        <div className="bg-[#121214] p-8 rounded-3xl border border-white/[0.04] flex flex-col justify-between hover:border-[#fbbf24]/20 hover:-translate-y-1 transition-all duration-300 shadow-md">
           <div className="flex justify-between items-start">
-            <span className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Salon Rating</span>
-            <span className="text-2xl">⭐</span>
+            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Salon Rating</span>
+            <div style={{
+              width: "2.25rem", height: "2.25rem", borderRadius: "10px",
+              background: "rgba(168, 85, 247, 0.08)", border: "1px solid rgba(168, 85, 247, 0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center"
+            }}>
+              <Star size={16} style={{ color: "#a855f7" }} />
+            </div>
           </div>
-          <div className="mt-4">
-            <h3 className="text-3xl font-extrabold text-gray-800">
-              {overview?.averageRating || 0} <span className="text-lg font-normal text-gray-400">/ 5</span>
+          <div className="mt-6">
+            <h3 className="text-4xl font-extrabold text-white tracking-tight">
+              {overview?.averageRating || 0} <span className="text-lg font-normal text-zinc-550">/ 5</span>
             </h3>
-            <p className="text-xs text-purple-500 font-semibold mt-1">Across {overview?.totalReviews || 0} reviews</p>
+            <p className="text-xs text-purple-400 font-semibold mt-2">Across {overview?.totalReviews || 0} reviews</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Recent Bookings Table */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2 space-y-4">
-          <h3 className="text-lg font-bold text-gray-800">Recent Appointments</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 md:gap-10">
+        
+        {/* Recent Appointments */}
+        <div className="bg-[#121214] p-8 rounded-3xl border border-white/[0.04] shadow-md lg:col-span-2 space-y-6">
+          <div className="flex justify-between items-center pb-2 border-b border-zinc-850">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Calendar size={20} className="text-[#fbbf24]" /> Recent Appointments
+            </h3>
+            <Link to="/owner/bookings" className="text-xs font-bold text-[#fbbf24] hover:text-[#eab308] transition-colors flex items-center gap-0.5">
+              Manage Bookings <ChevronRight size={14} />
+            </Link>
+          </div>
+
           {recentBookings.length === 0 ? (
-            <p className="text-sm text-gray-500 py-4">No recent bookings scheduled.</p>
+            <p className="text-sm text-zinc-500 py-10 text-center font-medium">No bookings logged for this salon yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-gray-400 font-semibold">
-                    <th className="pb-3">Customer</th>
-                    <th className="pb-3">Service</th>
-                    <th className="pb-3">Date</th>
-                    <th className="pb-3">Time</th>
-                    <th className="pb-3">Status</th>
+                  <tr className="text-zinc-500 font-bold uppercase text-[10px] tracking-wider border-b border-zinc-850">
+                    <th className="pb-3.5">Customer</th>
+                    <th className="pb-3.5">Service</th>
+                    <th className="pb-3.5">Date</th>
+                    <th className="pb-3.5">Time</th>
+                    <th className="pb-3.5 text-right">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50 text-gray-600">
+                <tbody className="divide-y divide-zinc-850 text-zinc-300">
                   {recentBookings.map((b) => (
-                    <tr key={b._id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="py-3 font-semibold text-gray-800">{b.customer?.name}</td>
-                      <td className="py-3">{b.service?.name}</td>
-                      <td className="py-3">{new Date(b.bookingDate).toLocaleDateString()}</td>
-                      <td className="py-3 font-mono">{b.startTime}</td>
-                      <td className="py-3">
+                    <tr key={b._id} className="hover:bg-zinc-900/35 transition-colors">
+                      <td className="py-4.5 font-bold text-white">{b.customer?.name}</td>
+                      <td className="py-4.5 font-semibold text-zinc-300">{b.service?.name}</td>
+                      <td className="py-4.5 text-zinc-450">{new Date(b.bookingDate).toLocaleDateString()}</td>
+                      <td className="py-4.5 font-mono font-bold text-zinc-400">{b.startTime}</td>
+                      <td className="py-4.5 text-right">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                          className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
                             b.status === "completed"
-                              ? "bg-blue-50 text-blue-600"
+                              ? "bg-blue-500/10 text-blue-450 border border-blue-500/20"
                               : b.status === "confirmed"
-                              ? "bg-green-50 text-green-600"
-                              : "bg-red-50 text-red-600"
+                              ? "bg-emerald-500/10 text-emerald-440 border border-emerald-500/20"
+                              : "bg-red-500/10 text-red-450 border border-red-500/20"
                           }`}
                         >
                           {b.status.replace("_", " ")}
@@ -460,19 +665,27 @@ const OwnerDashboard = () => {
         </div>
 
         {/* Top Services */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-          <h3 className="text-lg font-bold text-gray-800">Top Performing Services</h3>
+        <div className="bg-[#121214] p-8 rounded-3xl border border-white/[0.04] shadow-md space-y-6">
+          <div className="flex justify-between items-center pb-2 border-b border-zinc-850">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <TrendingUp size={20} className="text-[#fbbf24]" /> Top Performing Services
+            </h3>
+            <Link to="/owner/services" className="text-xs font-bold text-[#fbbf24] hover:text-[#eab308] transition-colors flex items-center gap-0.5">
+              Catalog <ChevronRight size={14} />
+            </Link>
+          </div>
+
           {topServices.length === 0 ? (
-            <p className="text-sm text-gray-500 py-4">No service statistics available.</p>
+            <p className="text-sm text-zinc-500 py-10 text-center font-medium">No sales statistics available.</p>
           ) : (
             <div className="space-y-4">
               {topServices.map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                <div key={idx} className="flex justify-between items-center p-4 rounded-xl bg-zinc-950/40 border border-zinc-850 hover:border-zinc-800 transition-colors shadow-sm">
                   <div>
-                    <h4 className="font-bold text-gray-800">{item.service || "General"}</h4>
-                    <p className="text-xs text-gray-400 font-semibold">{item.totalBookings} appointments</p>
+                    <h4 className="font-extrabold text-white text-sm">{item.service}</h4>
+                    <p className="text-[11px] text-zinc-450 font-semibold mt-0.5">{item.totalBookings} orders filled</p>
                   </div>
-                  <span className="font-bold text-slate-800">₹{item.revenue}</span>
+                  <span className="font-mono font-bold text-[#fbbf24] text-base">₹{item.revenue}</span>
                 </div>
               ))}
             </div>
@@ -480,11 +693,11 @@ const OwnerDashboard = () => {
         </div>
       </div>
 
-      {/* Monthly Revenue Chart */}
-      <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-        <h3 className="text-lg font-bold text-gray-800 mb-6">Monthly Revenue Comparisons ({new Date().getFullYear()})</h3>
+      {/* Monthly Revenue Comparisons */}
+      <div className="bg-[#121214] p-8 rounded-3xl border border-white/[0.04] shadow-md">
+        <h3 className="text-lg font-bold text-white mb-6">Monthly Revenue Comparisons ({new Date().getFullYear()})</h3>
         {monthlyRevenue.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
+          <div className="text-center py-12 text-zinc-500 font-medium text-sm">
             No completed sales aggregates recorded for this calendar year.
           </div>
         ) : (
@@ -494,15 +707,19 @@ const OwnerDashboard = () => {
               return (
                 <div key={idx} className="space-y-2">
                   <div className="flex justify-between items-center text-sm font-semibold">
-                    <span className="text-gray-700">{getMonthName(m._id.month)}</span>
-                    <span className="text-gray-800">
-                      ₹{m.revenue} <span className="text-gray-400 text-xs font-semibold">({m.bookings} bookings)</span>
+                    <span className="text-zinc-300 font-bold">{getMonthName(m._id.month)}</span>
+                    <span className="text-white font-extrabold text-base">
+                      ₹{m.revenue} <span className="text-zinc-500 text-xs font-semibold">({m.bookings} bookings)</span>
                     </span>
                   </div>
-                  <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
+                  <div className="w-full bg-zinc-950 h-3 rounded-full overflow-hidden border border-zinc-850">
                     <div
-                      className="bg-blue-600 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%` }}
+                      className="h-full rounded-full transition-all duration-700 ease-out"
+                      style={{
+                        width: `${pct}%`,
+                        background: "linear-gradient(90deg, #eab308 0%, #fbbf24 100%)",
+                        boxShadow: "0 0 8px rgba(251, 191, 36, 0.4)"
+                      }}
                     ></div>
                   </div>
                 </div>

@@ -29,6 +29,7 @@ const Navbar = () => {
   };
 
   const customerLinks = [
+    { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/my-bookings", label: "Bookings", icon: Calendar },
     { to: "/my-queue", label: "Queue", icon: Clock },
     { to: "/my-reviews", label: "Reviews", icon: Star },

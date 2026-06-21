@@ -11,7 +11,8 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { getMyBookings, cancelBooking } from "../../api/booking.api";
+import { cancelBooking } from "../../api/booking.api";
+import useBookingStore from "../../store/booking.store";
 import { joinQueue } from "../../api/queue.api";
 import ReviewModal from "../../components/review/ReviewModal";
 import Loader from "../../components/common/Loader";
@@ -28,15 +29,17 @@ const statusConfig = {
 };
 
 const MyBookings = () => {
-  const [bookings, setBookings] = useState([]);
+  const fetchMyBookings = useBookingStore((state) => state.fetchMyBookings);
+  const bookings = useBookingStore((state) => state.myBookings);
+  const cancelBookingInCache = useBookingStore((state) => state.cancelBookingInCache);
+
   const [loading, setLoading] = useState(true);
   const [reviewBookingId, setReviewBookingId] = useState(null);
   const [actionLoading, setActionLoading] = useState({});
 
-  const fetchBookings = async () => {
+  const fetchBookings = async (force = false) => {
     try {
-      const data = await getMyBookings();
-      setBookings(data.bookings);
+      await fetchMyBookings(force);
     } catch (err) {
       toast.error("Failed to load bookings.");
       console.error(err);
@@ -47,6 +50,7 @@ const MyBookings = () => {
 
   useEffect(() => {
     fetchBookings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCancel = async (bookingId) => {
@@ -54,8 +58,9 @@ const MyBookings = () => {
     setActionLoading((p) => ({ ...p, [`cancel_${bookingId}`]: true }));
     try {
       await cancelBooking(bookingId);
+      cancelBookingInCache(bookingId);
       toast.success("Booking cancelled successfully.");
-      fetchBookings();
+      fetchBookings(true);
     } catch (err) {
       toast.error(err.response?.data?.message || "Cancellation failed.");
     } finally {

@@ -10,14 +10,15 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { getServiceById } from "../../api/service.api";
-import { getAvailableSlots } from "../../api/booking.api";
 import { createOrder, verifyPayment } from "../../api/payment.api";
+import useBookingStore from "../../store/booking.store";
 import Loader from "../../components/common/Loader";
 import toast from "../../utils/toast";
 
 const Booking = () => {
   const { serviceId } = useParams();
   const navigate = useNavigate();
+  const fetchSlotsFromStore = useBookingStore((state) => state.fetchSlots);
 
   const [service, setService] = useState(null);
   const [date, setDate] = useState("");
@@ -57,9 +58,9 @@ const Booking = () => {
 
     setSlotsLoading(true);
     try {
-      const data = await getAvailableSlots(service.salon, service._id, selectedDate);
-      setSlots(data.slots || []);
-      if (!data.slots?.length) {
+      const fetchedSlots = await fetchSlotsFromStore(service.salon, service._id, selectedDate);
+      setSlots(fetchedSlots);
+      if (!fetchedSlots.length) {
         toast.info("No available slots for this date. Try another day.");
       }
     } catch (err) {

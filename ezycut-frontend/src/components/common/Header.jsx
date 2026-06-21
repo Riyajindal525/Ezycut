@@ -1,11 +1,38 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import { LogOut, Plus } from "lucide-react";
 import useAuthStore from "../../store/auth.store";
+import useSalonStore from "../../store/salon.store";
 
 const Header = ({ title }) => {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
+
+  // Salon store state
+  const { salons, activeSalonId, setActiveSalonId, fetchSalons } = useSalonStore();
+
+  const isOwner = user?.role === "salon_owner";
+
+  useEffect(() => {
+    if (isOwner) {
+      fetchSalons();
+    }
+  }, [isOwner, fetchSalons]);
+
+  const ownedSalons = salons.filter(
+    (s) => s.owner?._id === user?.id || s.owner === user?.id
+  );
+
+  // Set default active salon if not set
+  useEffect(() => {
+    if (isOwner && ownedSalons.length > 0) {
+      const match = ownedSalons.find((s) => s._id === activeSalonId);
+      if (!match) {
+        setActiveSalonId(ownedSalons[0]._id);
+      }
+    }
+  }, [isOwner, ownedSalons, activeSalonId, setActiveSalonId]);
 
   const handleLogout = () => {
     logout();
@@ -14,7 +41,56 @@ const Header = ({ title }) => {
 
   return (
     <header className="dash-header">
-      <h1 className="dash-header-title">{title}</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <h1 className="dash-header-title">{title}</h1>
+
+        {isOwner && ownedSalons.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "0.75rem", color: "var(--gray-400)", fontWeight: 500 }}>Active Salon:</span>
+            <select
+              value={activeSalonId || ""}
+              onChange={(e) => {
+                if (e.target.value === "ADD_NEW") {
+                  navigate("/owner/dashboard?register=true");
+                } else {
+                  setActiveSalonId(e.target.value);
+                }
+              }}
+              style={{
+                background: "#121214",
+                color: "white",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                borderRadius: "var(--radius-md)",
+                padding: "0.4rem 0.8rem",
+                fontSize: "0.8125rem",
+                fontWeight: 650,
+                outline: "none",
+                cursor: "pointer",
+                boxShadow: "var(--shadow-sm)",
+              }}
+            >
+              {ownedSalons.map((s) => (
+                <option key={s._id} value={s._id} style={{ background: "#121214", color: "white" }}>
+                  {s.name} {!s.isApproved ? "⏳" : ""}
+                </option>
+              ))}
+              <option value="ADD_NEW" style={{ background: "#121214", color: "#fbbf24", fontWeight: "bold" }}>
+                + Add New Salon
+              </option>
+            </select>
+          </div>
+        )}
+
+        {isOwner && ownedSalons.length === 0 && (
+          <button
+            onClick={() => navigate("/owner/dashboard?register=true")}
+            className="btn btn-primary btn-sm"
+            style={{ display: "flex", alignItems: "center", gap: "0.25rem", borderRadius: "var(--radius-md)" }}
+          >
+            <Plus size={14} /> Register Salon
+          </button>
+        )}
+      </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
         {/* User info */}
@@ -23,7 +99,7 @@ const Header = ({ title }) => {
             width: "2rem", height: "2rem",
             borderRadius: "50%",
             background: "var(--brand-accent)",
-            color: "white",
+            color: "#09090b",
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: "0.6875rem", fontWeight: 700,
           }}>

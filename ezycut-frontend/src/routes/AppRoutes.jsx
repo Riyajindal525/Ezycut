@@ -20,6 +20,7 @@ import MyReviews from "../pages/customer/MyReviews";
 import Notifications from "../pages/customer/Notifications";
 import MyQueue from "../pages/customer/MyQueue";
 import Profile from "../pages/customer/Profile";
+import CustomerDashboard from "../pages/customer/Dashboard";
 
 // Owner Pages
 import OwnerDashboard from "../pages/owner/Dashboard";
@@ -62,6 +63,7 @@ const AppRoutes = () => {
         {/* Protected Customer Routes */}
         <Route element={<ProtectedRoute allowedRoles={["customer", "admin"]} />}>
           <Route element={<CustomerLayout />}>
+            <Route path="/dashboard" element={<CustomerDashboard />} />
             <Route path="/booking/:serviceId" element={<Booking />} />
             <Route path="/my-bookings" element={<MyBookings />} />
             <Route path="/payment-history" element={<PaymentHistory />} />

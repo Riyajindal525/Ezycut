@@ -1,22 +1,31 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import useAuthStore from "../../store/auth.store";
-import { getAllSalons } from "../../api/salon.api";
+import useSalonStore from "../../store/salon.store";
 import {
   getServicesBySalon,
   createService,
   updateService,
   deleteService,
 } from "../../api/service.api";
+import toast from "../../utils/toast";
+import Loader from "../../components/common/Loader";
+import { Wrench, Trash2, Edit2, ToggleLeft, ToggleRight, Plus, HelpCircle, X, Check } from "lucide-react";
 
 const OwnerServices = () => {
   const user = useAuthStore((state) => state.user);
+  const { activeSalonId, salons } = useSalonStore();
   const [salon, setSalon] = useState(null);
   const [services, setServices] = useState([]);
   const [salonLoading, setSalonLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingService, setEditingService] = useState(null);
-  const [error, setError] = useState("");
+  const [saveLoading, setSaveLoading] = useState(false);
+
+  // Deletion Confirm Modal State
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [targetDeleteId, setTargetDeleteId] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -26,31 +35,31 @@ const OwnerServices = () => {
     category: "General",
   });
 
-  useEffect(() => {
-    const fetchSalonAndServices = async () => {
-      try {
-        const salonsResponse = await getAllSalons();
-        const ownerSalon = salonsResponse.salons.find(
-          (s) => s.owner?._id === user?.id || s.owner === user?.id
-        );
-
-        if (ownerSalon) {
-          setSalon(ownerSalon);
-          const servicesResponse = await getServicesBySalon(ownerSalon._id);
-          setServices(servicesResponse.services);
-        } else {
-          setError("register_needed");
-        }
-      } catch (err) {
-        console.error(err);
-        setError("Error fetching salon catalog details.");
-      } finally {
-        setSalonLoading(false);
+  const fetchSalonAndServices = async () => {
+    if (!activeSalonId) {
+      setSalonLoading(false);
+      return;
+    }
+    setSalonLoading(true);
+    try {
+      const activeSalon = salons.find((s) => s._id === activeSalonId);
+      if (activeSalon) {
+        setSalon(activeSalon);
+        const servicesResponse = await getServicesBySalon(activeSalonId);
+        setServices(servicesResponse.services || []);
       }
-    };
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load salon catalog details.");
+    } finally {
+      setSalonLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchSalonAndServices();
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, activeSalonId, salons.length]);
 
   const handleChange = (e) => {
     setFormData({
@@ -86,6 +95,7 @@ const OwnerServices = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!salon) return;
+    setSaveLoading(true);
 
     try {
       if (editingService) {
@@ -98,7 +108,7 @@ const OwnerServices = () => {
           category: formData.category,
         });
         setServices(services.map((s) => (s._id === editingService._id ? res.service : s)));
-        alert("Service updated successfully");
+        toast.success("Service catalog listing updated!");
       } else {
         // Add service
         const res = await createService({
@@ -110,12 +120,14 @@ const OwnerServices = () => {
           category: formData.category,
         });
         setServices([res.service, ...services]);
-        alert("Service added successfully");
+        toast.success("New service appended to catalog! 🎉");
       }
       setModalOpen(false);
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || "Failed to save service details.");
+      toast.error(err.response?.data?.message || "Failed to save service catalog entry.");
+    } finally {
+      setSaveLoading(false);
     }
   };
 
@@ -125,125 +137,152 @@ const OwnerServices = () => {
         isActive: !service.isActive,
       });
       setServices(services.map((s) => (s._id === service._id ? res.service : s)));
+      toast.success(`Service is now ${res.service.isActive ? "active" : "inactive"}`);
     } catch (err) {
       console.error(err);
-      alert("Failed to toggle service status");
+      toast.error("Failed to update status");
     }
   };
 
-  const handleDelete = async (serviceId) => {
-    if (!window.confirm("Are you sure you want to remove this service from your catalog?")) return;
+  const triggerDeleteConfirm = (serviceId) => {
+    setTargetDeleteId(serviceId);
+    setDeleteConfirmOpen(true);
+  };
 
+  const handleConfirmDelete = async () => {
+    if (!targetDeleteId) return;
+    setDeleteLoading(true);
     try {
-      await deleteService(serviceId);
-      setServices(services.filter((s) => s._id !== serviceId));
-      alert("Service deleted successfully");
+      await deleteService(targetDeleteId);
+      setServices(services.filter((s) => s._id !== targetDeleteId));
+      toast.success("Service removed from catalog successfully.");
+      setDeleteConfirmOpen(false);
+      setTargetDeleteId(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to delete service");
+      toast.error("Failed to delete service catalog item.");
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
   if (salonLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
-      </div>
-    );
+    return <Loader message="Loading service categories..." />;
   }
 
-  if (error) {
+  if (salons.filter(s => s.owner?._id === user?.id || s.owner === user?.id).length === 0) {
     return (
-      <div className="max-w-xl bg-white p-8 rounded-3xl border border-gray-100 shadow-sm space-y-4">
-        <h3 className="text-xl font-bold text-gray-800">Salon Setup Required</h3>
-        <p className="text-sm text-gray-500 leading-relaxed">
-          {error === "register_needed"
-            ? "You have not registered a salon profile yet. Please complete your salon setup first."
-            : error}
+      <div className="max-w-xl bg-[#121214] p-10 rounded-3xl border border-white/[0.04] shadow-2xl space-y-4 text-white">
+        <h3 className="text-xl font-bold">Salon Setup Required</h3>
+        <p className="text-sm text-zinc-400 leading-relaxed">
+          You have not registered a salon profile yet. Please complete your salon setup first.
         </p>
-        {error === "register_needed" && (
-          <Link
-            to="/owner/dashboard"
-            className="inline-block px-5 py-2.5 bg-black text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity"
-          >
-            Go to Dashboard Setup
-          </Link>
-        )}
+        <Link
+          to="/owner/dashboard?register=true"
+          className="btn btn-primary inline-flex px-6 py-3 text-sm font-bold rounded-xl uppercase tracking-wider"
+        >
+          Go to Onboarding Form
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 text-white animate-fade-in">
       {/* Upper header */}
-      <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center bg-[#121214] p-8 rounded-3xl border border-white/[0.04] shadow-md gap-4">
         <div>
-          <h3 className="text-2xl font-bold text-gray-800">{salon?.name} Catalog</h3>
-          <p className="text-sm text-gray-400 font-semibold mt-1">Manage services, durations, and pricing</p>
+          <h3 className="text-2xl font-black text-white">{salon?.name} Catalog</h3>
+          <p className="text-sm text-zinc-400 font-semibold mt-1">Manage services, durations, and pricing</p>
         </div>
         <button
           onClick={handleOpenAdd}
-          className="px-5 py-3 rounded-xl bg-black text-white hover:opacity-90 font-semibold shadow-sm transition-all"
+          className="btn btn-primary px-6 py-3.5 rounded-xl font-black shadow-sm transition-all flex items-center gap-1.5 self-start text-xs uppercase tracking-wider"
         >
-          + Add New Service
+          <Plus size={16} strokeWidth={2.5} /> Add New Service
         </button>
       </div>
 
       {/* Services Table Card */}
-      <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+      <div className="bg-[#121214] p-8 rounded-3xl border border-white/[0.04] shadow-md">
         {services.length === 0 ? (
-          <div className="text-center py-12">
-            <h4 className="text-xl font-bold text-gray-600">No Services Registered</h4>
-            <p className="text-gray-400 mt-1 text-sm font-semibold">Click "+ Add New Service" above to start building your catalog.</p>
+          <div className="text-center py-16 space-y-4">
+            <div style={{
+              width: "4rem", height: "4rem", borderRadius: "50%",
+              background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)",
+              display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto"
+            }}>
+              <Wrench size={24} className="text-zinc-500" />
+            </div>
+            <h4 className="text-xl font-bold text-zinc-400">No Catalog Services</h4>
+            <p className="text-zinc-500 mt-1 text-sm font-semibold max-w-sm mx-auto leading-relaxed">
+              Click "+ Add New Service" above to start building your shop menu catalog.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-gray-400 font-semibold">
-                  <th className="pb-3">Name</th>
-                  <th className="pb-3">Category</th>
-                  <th className="pb-3">Duration</th>
-                  <th className="pb-3">Price</th>
-                  <th className="pb-3 text-center">Status</th>
-                  <th className="pb-3 text-right">Actions</th>
+                <tr className="border-b border-zinc-855 text-zinc-500 font-bold uppercase text-[10px] tracking-wider">
+                  <th className="pb-4 pl-2">Name</th>
+                  <th className="pb-4">Category</th>
+                  <th className="pb-4">Duration</th>
+                  <th className="pb-4">Price</th>
+                  <th className="pb-4 text-center">Status</th>
+                  <th className="pb-4 text-right pr-2">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50 text-gray-600">
+              <tbody className="divide-y divide-zinc-850 text-zinc-300">
                 {services.map((s) => (
-                  <tr key={s._id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="py-4">
-                      <div className="font-bold text-gray-800">{s.name}</div>
-                      <div className="text-xs text-gray-400 max-w-sm truncate mt-0.5">{s.description || "No description provided."}</div>
+                  <tr key={s._id} className="hover:bg-zinc-900/35 transition-colors">
+                    <td className="py-5 pl-2">
+                      <div className="font-extrabold text-white text-base">{s.name}</div>
+                      <div className="text-xs text-zinc-450 max-w-sm truncate mt-1">{s.description || "No description provided."}</div>
                     </td>
-                    <td className="py-4 font-semibold">{s.category}</td>
-                    <td className="py-4 font-semibold">{s.duration} mins</td>
-                    <td className="py-4 font-bold text-gray-800">₹{s.price}</td>
-                    <td className="py-4 text-center">
+                    <td className="py-5 font-semibold text-zinc-300">
+                      <span className="px-2.5 py-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs font-bold text-zinc-300 tracking-wide uppercase">
+                        {s.category}
+                      </span>
+                    </td>
+                    <td className="py-5 font-mono font-bold text-zinc-400">{s.duration} mins</td>
+                    <td className="py-5 font-black text-[#fbbf24] text-base">₹{s.price}</td>
+                    <td className="py-5 text-center">
                       <button
                         onClick={() => handleToggleActive(s)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors ${
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider transition-colors border ${
                           s.isActive
-                            ? "bg-green-50 text-green-600 hover:bg-green-100"
-                            : "bg-red-50 text-red-600 hover:bg-red-100"
+                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15"
+                            : "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/15"
                         }`}
                       >
-                        {s.isActive ? "Active" : "Inactive"}
+                        {s.isActive ? (
+                          <>
+                            <Check size={10} strokeWidth={3} /> Active
+                          </>
+                        ) : (
+                          <>
+                            <X size={10} strokeWidth={3} /> Inactive
+                          </>
+                        )}
                       </button>
                     </td>
-                    <td className="py-4 text-right space-x-2">
-                      <button
-                        onClick={() => handleOpenEdit(s)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border text-gray-600 hover:bg-gray-50"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(s._id)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 hover:bg-red-100"
-                      >
-                        Delete
-                      </button>
+                    <td className="py-5 text-right pr-2">
+                      <div className="inline-flex gap-2 justify-end">
+                        <button
+                          onClick={() => handleOpenEdit(s)}
+                          className="p-2.5 rounded-xl text-zinc-400 hover:text-white border border-zinc-800 hover:bg-zinc-800 transition-colors"
+                          title="Edit Service"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          onClick={() => triggerDeleteConfirm(s._id)}
+                          className="p-2.5 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors"
+                          title="Delete Service"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -253,44 +292,53 @@ const OwnerServices = () => {
         )}
       </div>
 
-      {/* Modal Dialog */}
+      {/* Styled React Form Dialog Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/45 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-6">
-            <div>
-              <h3 className="text-xl font-bold text-gray-800">{editingService ? "Edit Service" : "Add Service"}</h3>
-              <p className="text-xs text-gray-400 font-semibold mt-1">Specify catalog product details</p>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#121214] border border-zinc-800 rounded-3xl shadow-2xl w-full max-w-lg p-6 space-y-6 animate-fade-in">
+            <div className="flex justify-between items-start pb-2 border-b border-zinc-850">
+              <div>
+                <h3 className="text-xl font-bold text-white">{editingService ? "Edit Service" : "Add Service"}</h3>
+                <p className="text-xs text-zinc-400 font-semibold mt-1">Specify catalog product details</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Service Name</label>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Service Name</label>
                 <input
                   type="text"
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
                   placeholder="e.g. Haircut & Wash"
-                  className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Description (Optional)</label>
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Description (Optional)</label>
                 <textarea
                   name="description"
                   value={formData.description}
                   onChange={handleChange}
-                  placeholder="Brief description of what is included..."
+                  placeholder="Brief description of what is included in the service..."
                   rows="3"
-                  className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Price (₹)</label>
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Price (₹)</label>
                   <input
                     type="number"
                     name="price"
@@ -298,13 +346,13 @@ const OwnerServices = () => {
                     onChange={handleChange}
                     placeholder="e.g. 350"
                     min="1"
-                    className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                     required
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Duration (Mins)</label>
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Duration (Mins)</label>
                   <input
                     type="number"
                     name="duration"
@@ -312,40 +360,94 @@ const OwnerServices = () => {
                     onChange={handleChange}
                     placeholder="e.g. 30"
                     min="1"
-                    className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                     required
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Category</label>
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest">Category</label>
                 <input
                   type="text"
                   name="category"
                   value={formData.category}
                   onChange={handleChange}
-                  placeholder="e.g. Hair, Shave, Facial"
-                  className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-slate-800"
+                  placeholder="e.g. Haircut, Shaving, Massage"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-[#fbbf24] transition-colors"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <div className="flex justify-end gap-3 pt-4 border-t border-zinc-850">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 border rounded-xl text-sm font-semibold hover:bg-gray-50 text-gray-600"
+                  className="px-5 py-2.5 border border-zinc-800 rounded-xl text-sm font-semibold hover:bg-zinc-800 text-zinc-300 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-black text-white rounded-xl text-sm font-semibold hover:opacity-90"
+                  disabled={saveLoading}
+                  className="px-6 py-2.5 bg-[#fbbf24] hover:bg-[#eab308] text-[#09090b] rounded-xl text-sm font-bold transition-colors flex items-center gap-1.5"
                 >
-                  Save Changes
+                  {saveLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-zinc-950"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    "Save Changes"
+                  )}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Styled React Delete Confirmation Modal */}
+      {deleteConfirmOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#121214] border border-zinc-800 rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-6 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div style={{
+                width: "2.5rem", height: "2.5rem", borderRadius: "50%",
+                background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.2)",
+                display: "flex", alignItems: "center", justifyContent: "center"
+              }}>
+                <HelpCircle size={18} className="text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Remove Service</h3>
+                <p className="text-xs text-zinc-400 font-semibold">Delete catalog listing</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-zinc-300 leading-relaxed">
+              Are you sure you want to remove this service from your catalog? This action will prevent new reservations for this service.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-zinc-850">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  setTargetDeleteId(null);
+                }}
+                className="px-5 py-2.5 border border-zinc-800 rounded-xl text-sm font-semibold hover:bg-zinc-800 text-zinc-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleteLoading}
+                className="px-6 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors flex items-center gap-1.5"
+              >
+                {deleteLoading ? "Deleting..." : "Permanently Delete"}
+              </button>
+            </div>
           </div>
         </div>
       )}

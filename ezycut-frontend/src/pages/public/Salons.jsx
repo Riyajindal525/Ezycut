@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
-import { getAllSalons, getNearbySalons } from "../../api/salon.api";
+import { getNearbySalons } from "../../api/salon.api";
+import useSalonStore from "../../store/salon.store";
 import SalonCard from "../../components/salon/SalonCard";
 import Loader from "../../components/common/Loader";
 import EmptyState from "../../components/common/EmptyState";
 import toast from "../../utils/toast";
 
 const Salons = () => {
+  const fetchSalonsFromStore = useSalonStore((state) => state.fetchSalons);
+
   const [salons, setSalons] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,8 +31,8 @@ const Salons = () => {
         setSalons(approved);
         setFiltered(approved);
       } else {
-        const data = await getAllSalons();
-        const approved = data.salons.filter((s) => s.isApproved);
+        const storeSalons = await fetchSalonsFromStore();
+        const approved = storeSalons.filter((s) => s.isApproved);
         setSalons(approved);
         setFiltered(approved);
       }

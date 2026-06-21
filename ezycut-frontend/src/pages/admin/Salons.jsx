@@ -3,6 +3,7 @@ import {
   getAllSalons,
   updateSalon,
   assignOwner,
+  deleteSalon,
 } from "../../api/salon.api";
 import toast from "../../utils/toast";
 
@@ -16,6 +17,39 @@ const AdminSalons = () => {
   const [selectedSalonId, setSelectedSalonId] = useState(null);
   const [targetOwnerId, setTargetOwnerId] = useState("");
   const [reassignLoading, setReassignLoading] = useState(false);
+
+  // Delete Salon States
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [salonToDelete, setSalonToDelete] = useState(null);
+  const [confirmTypedText, setConfirmTypedText] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleOpenDeleteModal = (salon) => {
+    setSalonToDelete(salon);
+    setConfirmTypedText("");
+    setDeleteModalOpen(true);
+  };
+
+  const submitDeleteSalon = async () => {
+    if (confirmTypedText !== `delete ${salonToDelete.name}`) {
+      toast.error("Confirmation text does not match.");
+      return;
+    }
+    setDeleteLoading(true);
+    try {
+      await deleteSalon(salonToDelete._id);
+      toast.success("Salon deleted successfully! 🗑️");
+      setDeleteModalOpen(false);
+      setSalonToDelete(null);
+      setConfirmTypedText("");
+      fetchSalonsList(); // Refresh
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.message || "Failed to delete salon.");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const fetchSalonsList = async () => {
     try {
@@ -153,9 +187,15 @@ const AdminSalons = () => {
                     <td className="py-4 text-right space-x-2">
                       <button
                         onClick={() => handleReassignOwner(s._id)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border text-gray-600 hover:bg-gray-50 transition-colors"
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border text-gray-400 hover:bg-gray-800 transition-colors"
                       >
                         Reassign Owner
+                      </button>
+                      <button
+                        onClick={() => handleOpenDeleteModal(s)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600/10 border border-red-500/20 text-red-400 hover:bg-red-600/20 transition-colors"
+                      >
+                        Delete
                       </button>
                     </td>
                   </tr>
@@ -216,6 +256,55 @@ const AdminSalons = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && salonToDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl w-full max-w-md p-6 space-y-6">
+            <div>
+              <h3 className="text-xl font-bold text-red-500">Delete Salon</h3>
+              <p className="text-xs text-gray-400 font-semibold mt-1">This action is permanent and cannot be reversed.</p>
+            </div>
+            
+            <p className="text-sm text-gray-300">
+              Are you sure you want to delete the salon <strong>{salonToDelete.name}</strong>?
+            </p>
+            
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Type <strong>delete {salonToDelete.name}</strong> to confirm:</label>
+              <input
+                type="text"
+                value={confirmTypedText}
+                onChange={(e) => setConfirmTypedText(e.target.value)}
+                placeholder={`delete ${salonToDelete.name}`}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-red-500 font-mono"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteModalOpen(false);
+                  setSalonToDelete(null);
+                  setConfirmTypedText("");
+                }}
+                className="px-4 py-2 border border-zinc-850 rounded-xl text-sm font-semibold hover:bg-zinc-800 text-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitDeleteSalon}
+                disabled={confirmTypedText !== `delete ${salonToDelete.name}` || deleteLoading}
+                className="px-5 py-2 bg-red-650 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {deleteLoading ? "Deleting..." : "Permanently Delete"}
+              </button>
+            </div>
           </div>
         </div>
       )}
